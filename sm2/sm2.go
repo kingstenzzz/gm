@@ -16,39 +16,60 @@ import (
 )
 
 const (
-	BitSize    = 256
-	KeyBytes   = (BitSize + 7) / 8
+	BitSize = 256
+	// KeyBytes 代表秘钥的字节长度，其中加7整除8其实是“向上取整”，用以兼容基础域位数不是8的整数倍的情况。
+	KeyBytes = (BitSize + 7) / 8
+	// UnCompress 代表椭圆曲线上的点采用“未压缩”的形式存储，占1个字节，详见国标1-4.1.(b)的定义。
 	UnCompress = 0x04
 )
 
 type Sm2CipherTextType int32
 
 const (
-	// 旧标准的密文顺序
-	C1C2C3 Sm2CipherTextType = 1
 	// [GM/T 0009-2012]标准规定的顺序
+	C1C2C3 Sm2CipherTextType = 1
+	//C1C3C2 代表新标准[GB/T 32918-2016]的密文顺序
 	C1C3C2 Sm2CipherTextType = 2
 )
 
 var (
-	sm2H                 = new(big.Int).SetInt64(1)
+	// sm2H 代表SM2推荐曲线的余因子h=1
+	// 椭圆曲线方程符合 y^2 = x^3 - 3x + b （mod p）
+	sm2H = new(big.Int).SetInt64(1)
+	// sm2SignDefaultUserID 代表sm2算法默认的加密操作用户A的ID编码(详见国标5-A.1)和SM2使用规范(GB/T 35276-2017第10部分)
 	sm2SignDefaultUserId = []byte{
 		0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
 		0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38}
 )
 
+// sm2P256V1 代表国密SM2推荐参数定义的椭圆曲线
+
 var sm2P256V1 P256V1Curve
 
+// P256V1Curve 代表国密SM2推荐参数定义的椭圆曲线:
+// (1) 素数域256位椭圆曲线
+// (2) 曲线方程为 Y^2 = X^3 + aX + b
+// (3) 其他参数: p, a, b, n, Gx, Gy 详见国标SM2推荐曲线参数
+// (4) 在GO语言标准库通用椭圆曲线参数类elliptic.CurveParams的基础上增加了参数a的属性
+// (5) 由于SM2推荐曲线符合a=p-3, 所以上述曲线可简化为等价曲线 Y^2 = X^3 - 3X + b (mod p),
+//这里用
+
 type P256V1Curve struct {
-	*elliptic.CurveParams
-	A *big.Int
+	*elliptic.CurveParams //使用标准库
+	A                     *big.Int
 }
 
+// PublicKey 代表SM2算法的公钥类:
+// (1) X,Y 为P点（有限素数域上基点G的D倍点)坐标
+// (2) Curve 为SM2算法的椭圆曲线
 type PublicKey struct {
 	X, Y  *big.Int
 	Curve P256V1Curve
 }
 
+//PrivateKey 代表SM2算法的私钥类:
+// (1) D代表公钥P点相对于基点G的倍数
+// (2) Curve 为SM2算法的椭圆曲线
 type PrivateKey struct {
 	D     *big.Int
 	Curve P256V1Curve
@@ -71,10 +92,12 @@ type sm2CipherC1C2C3 struct {
 }
 
 func init() {
+	// init() 初始化国密SM2推荐参数计算得出的椭圆曲线。
 	initSm2P256V1()
 }
 
 func initSm2P256V1() {
+	//使用GB/T ３２９１８．５—２０１７参数
 	sm2P, _ := new(big.Int).SetString("FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFF", 16)
 	sm2A, _ := new(big.Int).SetString("FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFC", 16)
 	sm2B, _ := new(big.Int).SetString("28E9FA9E9D9F5E344D5A9E4BCF6509A7F39789F515AB8F92DDBCBD414D940E93", 16)
@@ -91,10 +114,12 @@ func initSm2P256V1() {
 	sm2P256V1.BitSize = BitSize
 }
 
+//
 func GetSm2P256V1() P256V1Curve {
 	return sm2P256V1
 }
 
+//为国密SM2生成秘钥对
 func GenerateKey(rand io.Reader) (*PrivateKey, *PublicKey, error) {
 	priv, x, y, err := elliptic.GenerateKey(sm2P256V1, rand)
 	if err != nil {
